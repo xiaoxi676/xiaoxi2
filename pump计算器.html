@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>POMP 代币预售套利策略分析 (交互式计算器)</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            line-height: 1.6;
+            background-color: #f8f9fa;
+            color: #212529;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1000px;
+            margin: auto;
+            background: #fff;
+            padding: 25px;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.05);
+        }
+        h1, h2 {
+            color: #0052ff;
+            border-bottom: 2px solid #dee2e6;
+            padding-bottom: 10px;
+            margin-top: 30px;
+        }
+        h1 {
+            text-align: center;
+            font-size: 2em;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td {
+            padding: 12px;
+            border: 1px solid #dee2e6;
+            text-align: left;
+        }
+        th {
+            background-color: #e9ecef;
+            font-weight: bold;
+        }
+        tr:nth-child(even) {
+            background-color: #f8f9fa;
+        }
+        .card-container {
+            display: flex;
+            gap: 20px;
+            margin-top: 20px;
+            flex-wrap: wrap;
+        }
+        .card {
+            flex: 1;
+            background: #ffffff;
+            border: 1px solid #dee2e6;
+            padding: 20px;
+            border-radius: 8px;
+            min-width: 300px;
+        }
+        .card h3 {
+            margin-top: 0;
+            color: #0052ff;
+        }
+        .profit { color: #28a745; font-weight: bold; }
+        .loss { color: #dc3545; font-weight: bold; }
+        .neutral { color: #6c757d; }
+        .highlight { font-size: 1.2em; font-weight: bold; }
+        
+        .calculator {
+            background: #e9ecef;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 30px;
+        }
+        .calc-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+        }
+        .calc-item {
+            display: flex;
+            flex-direction: column;
+        }
+        .calc-item label {
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        .calc-item input {
+            width: 100%;
+            padding: 8px;
+            border-radius: 4px;
+            border: 1px solid #ced4da;
+        }
+        .calc-item span {
+            font-weight: bold;
+            color: #0052ff;
+        }
+
+        .risk-box {
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 15px;
+        }
+        .risk-high {
+            background-color: #fff3cd;
+            border-left: 5px solid #ffc107;
+            color: #856404;
+        }
+        .risk-critical {
+             background-color: #f8d7da;
+             border-left: 5px solid #dc3545;
+             color: #721c24;
+        }
+        
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>POMP 代币预售套利策略分析</h1>
+
+        <section id="calculator" class="calculator">
+            <h2>交互式策略计算器</h2>
+            <div class="calc-grid">
+                <div class="calc-item">
+                    <label for="totalCapital">总可用资金 (USDT)</label>
+                    <input type="number" id="totalCapital" value="5000" step="100">
+                </div>
+                <div class="calc-item">
+                    <label for="futuresPrice">期货价格 ($)</label>
+                    <input type="number" id="futuresPrice" value="0.0052" step="0.0001">
+                </div>
+                <div class="calc-item">
+                    <label for="leverage">杠杆倍数: <span id="leverageValue">3</span>x</label>
+                    <input type="range" id="leverage" min="1" max="10" value="3" step="0.1">
+                </div>
+                <div class="calc-item">
+                    <label for="fundingRate">资金费率 (%/8h): <span id="fundingRateValue">0.005</span>%</label>
+                    <input type="range" id="fundingRate" min="0" max="0.1" value="0.005" step="0.001">
+                </div>
+            </div>
+        </section>
+
+        <section id="overview">
+            <h2>1. 策略核心参数</h2>
+            <table>
+                <tbody>
+                    <tr>
+                        <td>代币预售价格 (Spot)</td>
+                        <td class="highlight">$0.004</td>
+                        <td>固定买入价</td>
+                    </tr>
+                    <tr>
+                        <td>解锁/持仓周期</td>
+                        <td class="neutral">72 小时</td>
+                        <td>固定持仓时间</td>
+                    </tr>
+                    <tr>
+                        <td>套保覆盖率</td>
+                        <td class="neutral">100%</td>
+                        <td>做空数量与现货购买数量完全相等</td>
+                    </tr>
+                    <tr>
+                        <td>期货止损线 (20%)</td>
+                        <td class="loss" id="stopLossPrice">$0.00624</td>
+                        <td>保护性止损，防止价格剧烈上涨导致爆仓</td>
+                    </tr>
+                    <tr>
+                        <td>预估强平价格</td>
+                        <td class="loss" id="liquidationPrice">$0.00693</td>
+                        <td>保证金耗尽的价格 (简化模型)</td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+        
+        <section id="positions">
+            <h2>2. 最优资金分配与仓位详情</h2>
+            <div class="card-container">
+                <div class="card">
+                    <h3>🟢 现货仓位 (Spot Position)</h3>
+                    <p><strong>投入资金: <span class="highlight" id="spotInvestment">$3,488 USDT</span></strong></p>
+                    <p><strong>购入数量:</strong> <span id="tokenAmount">872,000</span> POMP</p>
+                </div>
+                <div class="card">
+                    <h3>🔴 期货仓位 (Futures Position)</h3>
+                    <p><strong>投入保证金: <span class="highlight" id="marginInvestment">$1,512 USDT</span></strong></p>
+                    <p><strong>名义价值:</strong> <span id="futuresNominalValue">$4,534.4</span> USDT</p>
+                </div>
+            </div>
+        </section>
+
+        <section id="profit">
+            <h2>3. 盈利与成本预测</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>项目</th>
+                        <th>金额 (USDT)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>锁定毛利润</td>
+                        <td class="profit" id="grossProfit">+ $1,046.4</td>
+                    </tr>
+                    <tr>
+                        <td>期货资金费用</td>
+                        <td class="loss" id="fundingCost">- $2.04</td>
+                    </tr>
+                    <tr>
+                        <td>预估交易手续费</td>
+                        <td class="loss" id="tradingCost">- $8.16</td>
+                    </tr>
+                    <tr>
+                        <td><strong>预估净利润</strong></td>
+                        <td class="highlight profit" id="netProfit"><strong>~ $1,036.2</strong></td>
+                    </tr>
+                     <tr>
+                        <td><strong>投资回报率 (ROI)</strong></td>
+                        <td class="highlight profit" id="roi"><strong>~ 20.7% (72小时)</strong></td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+
+        <section id="risks">
+            <h2>4. 核心风险提示</h2>
+            <div class="risk-box risk-critical">
+                <strong>关键风险：期货价格暴涨触发止损。</strong> 这是导致策略失败的最直接风险。
+            </div>
+            <div class="risk-box risk-high">
+                <strong>市场风险：解锁时现货市场流动性枯竭或价格闪崩。</strong> 可能导致现货无法以理想价格卖出，侵蚀利润。
+            </div>
+        </section>
+        
+        <footer>
+            <p style="text-align: center; color: #6c757d; font-size: 0.9em; margin-top: 40px;">
+                <strong>免责声明:</strong> 本报告仅为基于提供数据的策略分析和计算，不构成任何投资建议。所有决策和风险由您自行承担。
+            </p>
+        </footer>
+    </div>
+
+<script>
+    // --- DOM Element References ---
+    const totalCapitalInput = document.getElementById('totalCapital');
+    const futuresPriceInput = document.getElementById('futuresPrice');
+    const leverageInput = document.getElementById('leverage');
+    const fundingRateInput = document.getElementById('fundingRate');
+
+    const leverageValueSpan = document.getElementById('leverageValue');
+    const fundingRateValueSpan = document.getElementById('fundingRateValue');
+
+    const stopLossPriceEl = document.getElementById('stopLossPrice');
+    const liquidationPriceEl = document.getElementById('liquidationPrice');
+    const spotInvestmentEl = document.getElementById('spotInvestment');
+    const tokenAmountEl = document.getElementById('tokenAmount');
+    const marginInvestmentEl = document.getElementById('marginInvestment');
+    const futuresNominalValueEl = document.getElementById('futuresNominalValue');
+    const grossProfitEl = document.getElementById('grossProfit');
+    const fundingCostEl = document.getElementById('fundingCost');
+    const tradingCostEl = document.getElementById('tradingCost');
+    const netProfitEl = document.getElementById('netProfit');
+    const roiEl = document.getElementById('roi');
+
+    // --- Constants ---
+    const SPOT_PRICE = 0.004;
+    const HOLDING_PERIOD_HOURS = 72;
+    const FUNDING_INTERVAL_HOURS = 8;
+    const FUTURES_TAKER_FEE = 0.0004; // 0.04%
+    const SPOT_TAKER_FEE = 0.001; // 0.1%
+
+    // --- Calculation Function ---
+    function calculateStrategy() {
+        // 1. Get values from inputs
+        const totalCapital = parseFloat(totalCapitalInput.value) || 0;
+        const futuresPrice = parseFloat(futuresPriceInput.value) || 0;
+        const leverage = parseFloat(leverageInput.value) || 1;
+        const fundingRate = parseFloat(fundingRateInput.value) / 100; // Convert to decimal
+
+        // Update slider value displays
+        leverageValueSpan.textContent = leverage.toFixed(1);
+        fundingRateValueSpan.textContent = (fundingRate * 100).toFixed(3);
+
+        // 2. Calculate Optimal Capital Allocation
+        let spotInvestment = 0;
+        if (SPOT_PRICE > 0 && leverage > 0) {
+            spotInvestment = totalCapital / (1 + (futuresPrice / (SPOT_PRICE * leverage)));
+        }
+        const marginInvestment = totalCapital - spotInvestment;
+        
+        // 3. Calculate Position Details
+        const tokenAmount = spotInvestment > 0 ? spotInvestment / SPOT_PRICE : 0;
+        const futuresNominalValue = tokenAmount * futuresPrice;
+
+        // 4. Calculate Profits and Costs
+        const grossProfit = (futuresPrice - SPOT_PRICE) * tokenAmount;
+        
+        const fundingOccurrences = HOLDING_PERIOD_HOURS / FUNDING_INTERVAL_HOURS;
+        const fundingCost = futuresNominalValue * fundingRate * fundingOccurrences;
+        
+        const futuresTradeCost = futuresNominalValue * FUTURES_TAKER_FEE * 2; // open and close
+        const spotSellCost = futuresNominalValue * SPOT_TAKER_FEE; // Assume selling at futures price
+        const totalTradingCost = futuresTradeCost + spotSellCost;
+
+        const netProfit = grossProfit - fundingCost - totalTradingCost;
+        const roi = totalCapital > 0 ? (netProfit / totalCapital) * 100 : 0;
+
+        // 5. Calculate Risk Prices
+        const stopLossPrice = futuresPrice * 1.20;
+        let liquidationPrice = 0;
+        if (tokenAmount > 0) {
+            // Simplified model: Liquidation Price = Entry + (Margin / Quantity)
+            liquidationPrice = futuresPrice + (marginInvestment / tokenAmount);
+        }
+
+        // 6. Update the DOM
+        spotInvestmentEl.textContent = `$${spotInvestment.toFixed(2)} USDT`;
+        marginInvestmentEl.textContent = `$${marginInvestment.toFixed(2)} USDT`;
+        tokenAmountEl.textContent = `${tokenAmount.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
+        futuresNominalValueEl.textContent = `$${futuresNominalValue.toFixed(2)}`;
+        
+        grossProfitEl.textContent = `+ $${grossProfit.toFixed(2)}`;
+        fundingCostEl.textContent = `- $${fundingCost.toFixed(2)}`;
+        tradingCostEl.textContent = `- $${totalTradingCost.toFixed(2)}`;
+        netProfitEl.innerHTML = `<strong>~ $${netProfit.toFixed(2)}</strong>`;
+        roiEl.innerHTML = `<strong>~ ${roi.toFixed(1)}% (${HOLDING_PERIOD_HOURS}小时)</strong>`;
+
+        stopLossPriceEl.textContent = `$${stopLossPrice.toFixed(5)}`;
+        liquidationPriceEl.textContent = `$${liquidationPrice.toFixed(5)}`;
+    }
+
+    // --- Event Listeners ---
+    const inputs = [totalCapitalInput, futuresPriceInput, leverageInput, fundingRateInput];
+    inputs.forEach(input => {
+        input.addEventListener('input', calculateStrategy);
+    });
+
+    // --- Initial Calculation on Load ---
+    document.addEventListener('DOMContentLoaded', calculateStrategy);
+
+</script>
+</body>
+</html>
