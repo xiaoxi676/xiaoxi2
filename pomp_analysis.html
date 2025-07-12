@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>POMP 代币预售套利策略分析</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            line-height: 1.6;
+            background-color: #f8f9fa;
+            color: #212529;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1000px;
+            margin: auto;
+            background: #fff;
+            padding: 25px;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.05);
+        }
+        h1, h2 {
+            color: #0052ff;
+            border-bottom: 2px solid #dee2e6;
+            padding-bottom: 10px;
+            margin-top: 30px;
+        }
+        h1 {
+            text-align: center;
+            font-size: 2em;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td {
+            padding: 12px;
+            border: 1px solid #dee2e6;
+            text-align: left;
+        }
+        th {
+            background-color: #e9ecef;
+            font-weight: bold;
+        }
+        tr:nth-child(even) {
+            background-color: #f8f9fa;
+        }
+        .card-container {
+            display: flex;
+            gap: 20px;
+            margin-top: 20px;
+            flex-wrap: wrap;
+        }
+        .card {
+            flex: 1;
+            background: #ffffff;
+            border: 1px solid #dee2e6;
+            padding: 20px;
+            border-radius: 8px;
+            min-width: 300px;
+        }
+        .card h3 {
+            margin-top: 0;
+            color: #0052ff;
+        }
+        .profit { color: #28a745; font-weight: bold; }
+        .loss { color: #dc3545; font-weight: bold; }
+        .neutral { color: #6c757d; }
+        .highlight { font-size: 1.2em; font-weight: bold; }
+        
+        .workflow ol {
+            list-style-type: decimal;
+            padding-left: 20px;
+        }
+        .workflow li {
+            margin-bottom: 10px;
+            font-size: 1.1em;
+        }
+        .risk-box {
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 15px;
+        }
+        .risk-high {
+            background-color: #fff3cd;
+            border-left: 5px solid #ffc107;
+            color: #856404;
+        }
+        .risk-critical {
+             background-color: #f8d7da;
+             border-left: 5px solid #dc3545;
+             color: #721c24;
+        }
+        
+        /* Simple Bar Chart */
+        .chart-container {
+            border: 1px solid #dee2e6;
+            padding: 20px;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+        .chart-title {
+            text-align: center;
+            font-weight: bold;
+            margin-bottom: 20px;
+        }
+        .bar-wrapper {
+            display: flex;
+            justify-content: space-around;
+            align-items: flex-end;
+            height: 200px;
+        }
+        .bar {
+            width: 50px;
+            text-align: center;
+            position: relative;
+        }
+        .bar .label {
+            position: absolute;
+            bottom: -25px;
+            width: 100%;
+            font-size: 0.9em;
+        }
+        .bar .value {
+            font-weight: bold;
+            margin-bottom: 5px;
+            font-size: 0.9em;
+        }
+        .bar-gross { background-color: #4caf50; }
+        .bar-costs { background-color: #ff9800; }
+        .bar-net { background-color: #2196f3; }
+
+        /* Risk Zone Visual */
+        .risk-zone-container {
+            position: relative;
+            width: 100%;
+            height: 50px;
+            background: linear-gradient(to right, #c8e6c9, #fff9c4, #ffcdd2);
+            border-radius: 5px;
+            margin-top: 35px;
+        }
+        .risk-marker {
+            position: absolute;
+            top: -10px;
+            transform: translateX(-50%);
+            text-align: center;
+        }
+        .risk-marker div {
+            font-weight: bold;
+        }
+        .risk-marker .line {
+            width: 2px;
+            height: 70px;
+            background: #333;
+            margin: 0 auto;
+        }
+        
+        /* Responsive design improvements */
+        @media (max-width: 768px) {
+            .card-container {
+                flex-direction: column;
+            }
+            .card {
+                min-width: auto;
+            }
+            .bar-wrapper {
+                flex-direction: column;
+                height: auto;
+                gap: 20px;
+            }
+            .bar {
+                width: 100%;
+                height: 50px;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                padding: 0 10px;
+            }
+            .bar .label {
+                position: static;
+                margin-right: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>POMP 代币预售套利策略分析</h1>
+
+        <section id="overview">
+            <h2>1. 策略核心参数</h2>
+            <p>本策略旨在通过在预售市场低价买入现货，同时在币安永续合约市场高价做空等量代币，以锁定无风险价差。成功与否取决于严格的执行和风险管理。</p>
+            <table>
+                <thead>
+                    <tr>
+                        <th>参数项</th>
+                        <th>数值</th>
+                        <th>备注</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>总可用资金</td>
+                        <td class="highlight">$5,000 USDT</td>
+                        <td>用于现货购买和期货保证金的总和</td>
+                    </tr>
+                    <tr>
+                        <td>代币预售价格 (Spot)</td>
+                        <td class="highlight">$0.004</td>
+                        <td>在 Pump.fun 或其他预售平台的买入价</td>
+                    </tr>
+                    <tr>
+                        <td>期货开仓价格 (Futures)</td>
+                        <td class="highlight">$0.0052</td>
+                        <td>在币安永续合约的做空价格</td>
+                    </tr>
+                    <tr>
+                        <td>最大杠杆</td>
+                        <td class="neutral">3x</td>
+                        <td>期货仓位可使用的最高杠杆倍数</td>
+                    </tr>
+                    <tr>
+                        <td>解锁/持仓周期</td>
+                        <td class="neutral">72 小时</td>
+                        <td>从建仓到现货解锁的时间</td>
+                    </tr>
+                    <tr>
+                        <td>资金费率</td>
+                        <td class="neutral">0.005% / 8小时</td>
+                        <td>预估的空头持仓费率</td>
+                    </tr>
+                    <tr>
+                        <td>套保覆盖率</td>
+                        <td class="neutral">100%</td>
+                        <td>做空数量与现货购买数量完全相等</td>
+                    </tr>
+                    <tr>
+                        <td>期货止损线</td>
+                        <td class="loss">20% (价格 $0.00624)</td>
+                        <td>保护性止损，防止价格剧烈上涨导致爆仓</td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+        
+        <section id="positions">
+            <h2>2. 最优资金分配与仓位详情</h2>
+            <p>基于总资金和杠杆限制，计算得出的最优资金分配方案如下，以最大化利用资金并实现100%套保。</p>
+            <div class="card-container">
+                <div class="card">
+                    <h3>🟢 现货仓位 (Spot Position)</h3>
+                    <p><strong>投入资金: <span class="highlight">$3,488 USDT</span></strong></p>
+                    <p><strong>购入价格:</strong> $0.004</p>
+                    <p><strong>购入数量:</strong> 872,000 POMP</p>
+                    <p><strong>状态:</strong> 72小时锁仓</p>
+                </div>
+                <div class="card">
+                    <h3>🔴 期货仓位 (Futures Position)</h3>
+                    <p><strong>投入保证金: <span class="highlight">$1,512 USDT</span></strong></p>
+                    <p><strong>操作:</strong> 做空 (Short)</p>
+                    <p><strong>做空数量:</strong> 872,000 POMP</p>
+                    <p><strong>名义价值:</strong> $4,534.4 USDT</p>
+                    <p><strong>实际杠杆:</strong> ~2.998x</p>
+                    <p><strong>止损价格:</strong> <span class="loss">$0.00624</span></p>
+                </div>
+            </div>
+        </section>
+
+        <section id="profit">
+            <h2>3. 盈利与成本预测</h2>
+            <div class="chart-container">
+                <div class="chart-title">利润构成图</div>
+                <div class="bar-wrapper">
+                    <div class="bar">
+                        <div class="value">$1,046.4</div>
+                        <div class="bar-gross" style="height: 100%;"></div>
+                        <div class="label">锁定毛利</div>
+                    </div>
+                    <div class="bar">
+                        <div class="value">-$10.2</div>
+                        <div class="bar-costs" style="height: 10%;"></div>
+                        <div class="label">总成本</div>
+                    </div>
+                    <div class="bar">
+                        <div class="value profit">$1,036.2</div>
+                        <div class="bar-net" style="height: 99%;"></div>
+                        <div class="label">预估净利</div>
+                    </div>
+                </div>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>项目</th>
+                        <th>计算</th>
+                        <th>金额 (USDT)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>锁定毛利润</td>
+                        <td>($0.0052 - $0.004) * 872,000</td>
+                        <td class="profit">+ $1,046.4</td>
+                    </tr>
+                    <tr>
+                        <td>期货资金费用</td>
+                        <td>$4534.4 * 0.005% * 9次</td>
+                        <td class="loss">- $2.04</td>
+                    </tr>
+                    <tr>
+                        <td>交易手续费</td>
+                        <td>期货开平仓 + 现货卖出</td>
+                        <td class="loss">- $8.16</td>
+                    </tr>
+                    <tr>
+                        <td><strong>预估净利润</strong></td>
+                        <td>毛利润 - 总成本</td>
+                        <td class="highlight profit"><strong>~ $1,036.2</strong></td>
+                    </tr>
+                     <tr>
+                        <td><strong>投资回报率 (ROI)</strong></td>
+                        <td>净利润 / 总本金</td>
+                        <td class="highlight profit"><strong>~ 20.7% (72小时)</strong></td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+        
+        <section id="workflow" class="workflow">
+            <h2>4. 策略执行流程 (Checklist)</h2>
+            <ol>
+                <li><strong>资金准备:</strong> 确保 Pump.fun 账户有 $3,488 USDT，币安合约账户有 $1,512 USDT。</li>
+                <li><strong>同步建仓:</strong> 在预售平台下单购买的同时，<strong>立即</strong>在币安合约市场以 $0.0052 附近的价格做空 872,000 POMP。动作必须快，以防价差变动。</li>
+                <li><strong>设置止损:</strong> 在币安为空头仓位设置 $0.00624 的止损单。<strong>这是必须步骤！</strong></li>
+                <li><strong>持仓等待:</strong> 等待72小时，期间密切关注期货价格是否接近止损线，以及资金费率有无异常飙升。</li>
+                <li><strong>同步平仓:</strong> 72小时后，代币解锁到账，<strong>立即</strong>在现货市场卖出全部 872,000 POMP，并<strong>同时</strong>平掉币安的空头仓位，锁定利润。</li>
+            </ol>
+        </section>
+
+        <section id="risks">
+            <h2>5. 核心风险分析</h2>
+
+            <div class="risk-box risk-critical">
+                <strong>关键风险：期货价格暴涨触发止损。</strong> 这是导致策略失败的最直接风险。
+            </div>
+            <div class="risk-zone-container">
+                 <div class="risk-marker" style="left: 30%;">
+                    <div>🟢 开仓价</div>
+                    <div class="line" style="background: #28a745;"></div>
+                    <div>$0.0052</div>
+                </div>
+                <div class="risk-marker" style="left: 80%;">
+                    <div>🔴 止损价</div>
+                    <div class="line" style="background: #dc3545;"></div>
+                    <div>$0.00624</div>
+                </div>
+            </div>
+             <p style="text-align:center; margin-top:10px;">价格进入右侧红色区域，策略失败并产生实际亏损。</p>
+            
+            <div class="risk-box risk-high">
+                <strong>市场风险：解锁时现货市场流动性枯竭或价格闪崩。</strong> 可能导致现货无法以理想价格卖出，侵蚀甚至亏掉利润。
+            </div>
+             <div class="risk-box risk-high">
+                <strong>项目方风险：</strong> 即使币安已上线合约，Pump.fun 上的项目方仍可能存在其他问题（如推迟解锁、漏洞等）。
+            </div>
+        </section>
+        
+        <footer>
+            <p style="text-align: center; color: #6c757d; font-size: 0.9em; margin-top: 40px;">
+                <strong>免责声明:</strong> 本报告仅为基于提供数据的策略分析和梳理，不构成任何投资建议。加密货币市场风险极高，所有决策和风险由您自行承担。在执行任何交易前，请务必进行自己的研究和判断。
+            </p>
+        </footer>
+
+    </div>
+
+</body>
+</html>
